@@ -276,7 +276,7 @@ bot.on("callback_query", async (ctx) => {
 
     // Ask for month and day only
     return ctx.reply(
-      "🗓 Iltimos, booking uchun sanani kiriting (Format: MM-DD, masalan: 04-26)"
+      "🗓 Iltimos, buyurtma uchun sanani kiriting (Format: MM-DD, masalan: 04-26)"
     );
   }
   // If time is selected (match a time format like "09:00")
@@ -313,7 +313,7 @@ bot.on("callback_query", async (ctx) => {
   // Handle other callback types if needed
   else {
     await ctx.answerCbQuery("Noma'lum so'rov");
-    return ctx.reply("❌ Xatolik yuz berdi. Iltimos /book ni qayta bosing.");
+    return ctx.reply("❌ Xatolik yuz berdi. Iltimos /buyurtma ni qayta bosing.");
   }
 });
 
@@ -327,7 +327,7 @@ async function createOrder(ctx: Context, telegramId: number) {
     !session.serviceTime
   ) {
     return ctx.reply(
-      "❌ Yetarli ma'lumot yo'q. Iltimos /book ni qayta bosing."
+      "❌ Yetarli ma'lumot yo'q. Iltimos /buyurtma ni qayta bosing."
     );
   }
 
