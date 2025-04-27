@@ -144,13 +144,24 @@ bot.on("text", async (ctx) => {
 
     const isToday = selectedDate.toDateString() === today.toDateString();
     if (isToday) {
-      const currentHour = new Date().getHours();
+      const now = new Date();
 
       timeOptions = timeOptions
         .map((row) =>
           row.filter((button) => {
-            const buttonHour = parseInt(button.text.split(":")[0], 10);
-            return buttonHour > currentHour;
+            const [buttonHour, buttonMinute] = button.text
+              .split(":")
+              .map(Number);
+
+            const buttonDate = new Date(
+              now.getFullYear(),
+              now.getMonth(),
+              now.getDate(),
+              buttonHour,
+              buttonMinute
+            );
+
+            return buttonDate.getTime() > now.getTime();
           })
         )
         .filter((row) => row.length > 0);
@@ -171,7 +182,6 @@ bot.on("text", async (ctx) => {
     );
   }
 
-  // Handle time input for booking
   if (userSession[telegramId] && userSession[telegramId].awaitingTime) {
     const timeFormatRegex = /^\d{1,2}:\d{2}$/;
     if (!timeFormatRegex.test(text)) {
@@ -180,12 +190,34 @@ bot.on("text", async (ctx) => {
       );
     }
 
+    const [enteredHour, enteredMinute] = text.split(":").map(Number);
+    const now = new Date();
+    const enteredDate = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      enteredHour,
+      enteredMinute
+    );
+
+    const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
+
+    if (
+      userSession[telegramId].serviceDate === now.toISOString().split("T")[0]
+    ) {
+      if (enteredDate.getTime() <= oneHourLater.getTime()) {
+        return ctx.reply(
+          "❌ Siz kamida 1 soatdan keyin bo'lgan vaqtni tanlashingiz kerak. Iltimos boshqa vaqt kiriting."
+        );
+      }
+    }
+
     userSession[telegramId].serviceTime = text;
     userSession[telegramId].awaitingTime = false;
 
-    // Create the order
     return await createOrder(ctx, telegramId);
   }
+
 });
 
 bot.on("contact", async (ctx) => {
