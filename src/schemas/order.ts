@@ -9,6 +9,7 @@ export interface IOrder extends Document {
   serviceTime: string;
   status: StatusType;
   cancellationReason?: string;
+  orderCode: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -30,6 +31,11 @@ const orderSchema = new Schema<IOrder>(
       required: true,
     },
     cancellationReason: { type: String },
+    orderCode: {
+      type: Number,
+      required: true,
+      unique: true,
+    },
   },
   { timestamps: true }
 );

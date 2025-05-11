@@ -1,6 +1,6 @@
 export enum StatusType {
-  Pending = "pending",
-  Confirmed = "confirmed",
-  Cancelled = "cancelled",
-  Completed = "completed",
+  Pending = "tasdiqlanyapti",
+  Confirmed = "tasdiqlangan",
+  Cancelled = "rad etilgan",
+  Completed = "tugatilgan",
 }

@@ -3,7 +3,9 @@ import dotenv from "dotenv";
 import { User } from "../schemas/user";
 import { ServicePrices, ServiceType } from "../types/service-type";
 import { Order } from "../schemas/order";
-import { Types } from "mongoose";
+import { StatusType } from "../types/order-status-stype";
+import { createUniqueOrderCode } from "../utils/generate-order-code";
+import { mainMenuKeyboard } from "../constants/main-menu-keyboards";
 
 dotenv.config();
 
@@ -20,9 +22,8 @@ const userSession: Record<
     awaitingTime?: boolean;
   }
 > = {};
-bot.command("oldschool", (ctx) => ctx.reply("Hello"));
 
-bot.command("buyurtma", async (ctx) => {
+bot.hears("📝 Buyurtma berish", async (ctx) => {
   ctx.reply("📅 Bron qilish uchun quyidagi tugmani bosing:");
   const telegramId = ctx.from?.id;
   if (!telegramId) return;
@@ -49,6 +50,55 @@ bot.command("buyurtma", async (ctx) => {
     Markup.inlineKeyboard(serviceButtons)
   );
 });
+
+bot.hears("📋 Aktiv buyurtmalarim", async (ctx) => {
+  const user = await User.findOne({ telegramId: ctx.from.id });
+  if (!user) return ctx.reply("Foydalanuvchi topilmadi.");
+
+  await ctx.reply("Buyurtmalar yuklanmoqda...");
+  const activeOrders = await Order.find({
+    userId: user._id,
+    status: { $in: [StatusType.Pending, StatusType.Confirmed] },
+  }).sort({ createdAt: -1 });
+
+  if (!activeOrders.length)
+    return await ctx.reply("Sizda aktiv buyurtmalar yo‘q.");
+
+  const messages = activeOrders.map(
+    (order) =>
+      `📌 *Buyurtma ID:* ${order.orderCode}\n` +
+      `📅 Sana: ${order.serviceDate}\n` +
+      `⏰ Vaqt: ${order.serviceTime}\n` +
+      `🧰 Xizmat: ${order.serviceType}\n` +
+      `📍 Holat: *${order.status}*`
+  );
+
+  await ctx.replyWithHTML(messages.join("\n\n"));
+});
+
+bot.hears("🗂 Barcha buyurtmalarim", async (ctx) => {
+  const user = await User.findOne({ telegramId: ctx.from.id });
+  if (!user) return ctx.reply("Foydalanuvchi topilmadi.");
+
+  await ctx.reply("Buyurtmalar yuklanmoqda...");
+  const allOrders = await Order.find({ userId: user._id }).sort({
+    createdAt: -1,
+  });
+
+  if (!allOrders.length) return ctx.reply("Buyurtmalar topilmadi.");
+
+  const messages = allOrders.map(
+    (order) =>
+      `📌 *Buyurtma ID:* ${order.orderCode}\n` +
+      `📅 Sana: ${order.serviceDate}\n` +
+      `⏰ Vaqt: ${order.serviceTime}\n` +
+      `🧰 Xizmat: ${order.serviceType}\n` +
+      `📍 Holat: *${order.status}*`
+  );
+
+  await ctx.replyWithHTML(messages.join("\n\n"));
+});
+
 bot.start(async (ctx) => {
   const telegramId = ctx.from?.id;
   if (!telegramId) return;
@@ -57,15 +107,13 @@ bot.start(async (ctx) => {
 
   if (existingUser) {
     return ctx.reply(
-      `Xush Kelibsiz, ${existingUser.fullName}! 🎉`,
-      Markup.inlineKeyboard([
-        Markup.button.webApp("📅 Bron qilish", process.env.WEB_APP_URL!),
-      ])
+      `Xush Kelibsiz, ${existingUser.fullName}! 🎉\nBron qilish uchun asosiy menyudagi tugmani bosing:`,
+      mainMenuKeyboard
     );
   }
 
   tempData[telegramId] = {};
-  ctx.reply("Assalomu alaykum! 👋 To'lqi ismingizni kiriting");
+  ctx.reply("Assalomu alaykum! 👋 To'liq ismingizni kiriting");
 });
 
 bot.on("text", async (ctx) => {
@@ -73,7 +121,6 @@ bot.on("text", async (ctx) => {
   const text = ctx.message.text;
   if (!telegramId) return;
 
-  // Handle registration process
   if (tempData[telegramId] && !tempData[telegramId].fullName) {
     tempData[telegramId].fullName = text;
 
@@ -87,9 +134,7 @@ bot.on("text", async (ctx) => {
     );
   }
 
-  // In the text handler where we ask for the date
   if (userSession[telegramId] && userSession[telegramId].awaitingDate) {
-    // Check if the date format is valid (MM-DD)
     const dateFormatRegex = /^(0?[1-9]|1[0-2])-(0?[1-9]|[12][0-9]|3[01])$/;
     if (!dateFormatRegex.test(text)) {
       return ctx.reply(
@@ -97,7 +142,6 @@ bot.on("text", async (ctx) => {
       );
     }
 
-    // Add the current year to the date for processing
     const currentYear = new Date().getFullYear();
     const [month, day] = text.split("-").map((num) => parseInt(num, 10));
 
@@ -139,6 +183,14 @@ bot.on("text", async (ctx) => {
       [
         Markup.button.callback("16:00", "16:00"),
         Markup.button.callback("17:00", "17:00"),
+      ],
+      [
+        Markup.button.callback("18:00", "18:00"),
+        Markup.button.callback("19:00", "19:00"),
+      ],
+      [
+        Markup.button.callback("20:00", "20:00"),
+        Markup.button.callback("21:00", "21:00"),
       ],
     ];
 
@@ -217,7 +269,6 @@ bot.on("text", async (ctx) => {
 
     return await createOrder(ctx, telegramId);
   }
-
 });
 
 bot.on("contact", async (ctx) => {
@@ -246,41 +297,140 @@ bot.on("contact", async (ctx) => {
 
   ctx.reply(
     `🎉 Ro'yhatdan o'tganingiz uchun rahmt, ${fullName}! Endi bron qilishingiz mumkin:`,
-    {
-      ...Markup.inlineKeyboard([
-        Markup.button.webApp("📅 Bron qilish", process.env.WEB_APP_URL!),
-      ]),
-      ...Markup.removeKeyboard(),
-    }
+    mainMenuKeyboard
   );
 });
 
-// Callback for selecting service type or time
 bot.on("callback_query", async (ctx) => {
+  const data = (ctx.callbackQuery as any).data;
+
+  if (!data) return;
+
+  const [action, orderId] = data.split(":");
+
+  if (
+    [
+      "confirm",
+      "cancel",
+      "complete",
+      "complete_yes",
+      "complete_cancel",
+    ].includes(action)
+  ) {
+    const order = await Order.findById(orderId).populate("userId");
+    if (!order || !order.userId) {
+      await ctx.answerCbQuery("❌ Buyurtma topilmadi", { show_alert: true });
+      return;
+    }
+
+    const user = order.userId as any;
+
+    let userMessage = "";
+
+    switch (action) {
+      case "confirm":
+        await ctx.answerCbQuery("⏳ Iltimos, kuting...");
+        order.status = StatusType.Confirmed;
+        await ctx.editMessageReplyMarkup(
+          Markup.inlineKeyboard([
+            [
+              Markup.button.callback("❌ Bekor qilish", `cancel:${order._id}`),
+              Markup.button.callback("✔️ Tugatildi", `complete:${order._id}`),
+            ],
+          ]).reply_markup
+        );
+        userMessage = `✅ Buyurtmangiz barber tomonidan *tasdiqlandi*.\n\nBuyurtma raqami: ${order.orderCode}\nIltimos, belgilangan vaqtdan *10 daqiqa oldinroq* yetib kelishingizni so'raymiz.`;
+        break;
+
+      case "cancel":
+        order.status = StatusType.Cancelled;
+        order.cancellationReason = "Barber tomonidan bekor qilindi";
+        await ctx.editMessageReplyMarkup(
+          Markup.inlineKeyboard([
+            [
+              Markup.button.callback(
+                "Bekor qilingan. Qaytarish uchun bosing",
+                `complete_cancel:${order._id}`
+              ),
+            ],
+          ]).reply_markup
+        );
+        userMessage = `❌ Buyurtmangiz *barber tomonidan bekor qilindi*\nBuyurtma raqami: ${order.orderCode}.`;
+        break;
+
+      case "complete":
+        await ctx.answerCbQuery("⏳ Iltimos, kuting...");
+        await ctx.editMessageReplyMarkup(
+          Markup.inlineKeyboard([
+            [
+              Markup.button.callback(
+                "✅ Ha, yakunlash",
+                `complete_yes:${orderId}`
+              ),
+              Markup.button.callback(
+                "❌ Yo'q, bekor qilish",
+                `complete_cancel:${orderId}`
+              ),
+            ],
+          ]).reply_markup
+        );
+        return ctx.answerCbQuery("Yakunlashni tasdiqlaysizmi?");
+
+      case "complete_yes":
+        order.status = StatusType.Completed;
+        await ctx.answerCbQuery("⏳ Iltimos, kuting...");
+        await order.save();
+
+        await bot.telegram.sendMessage(
+          user.telegramId,
+          `✅ Xizmat barber tomonidan yakunlandi.\nBuyurtma raqami: ${order.orderCode}\n\n\n*Biz bilan ishlaganingizdan mamnunmiz!* 😊`,
+          { parse_mode: "Markdown" }
+        );
+
+        await ctx.editMessageReplyMarkup(undefined);
+        return ctx.answerCbQuery("Yakunlandi.");
+
+      case "complete_cancel":
+        await ctx.answerCbQuery("⏳ Iltimos, kuting...");
+        await ctx.editMessageReplyMarkup(
+          Markup.inlineKeyboard([
+            [
+              Markup.button.callback("✅ Tasdiqlash", `confirm:${order._id}`),
+              Markup.button.callback("❌ Bekor qilish", `cancel:${order._id}`),
+            ],
+            [Markup.button.callback("✔️ Tugatildi", `complete:${order._id}`)],
+          ]).reply_markup
+        );
+        return ctx.answerCbQuery("Bekor qilindi.");
+    }
+
+    await order.save();
+    await bot.telegram.sendMessage(user.telegramId, userMessage, {
+      parse_mode: "Markdown",
+    });
+
+    await ctx.answerCbQuery("✅ Holat yangilandi");
+    return;
+  }
+
   const telegramId = ctx.from?.id;
-  const data = (ctx.callbackQuery as any)?.data;
   if (!telegramId || !data) return;
 
-  // Initialize session if it doesn't exist
   if (!userSession[telegramId]) {
     userSession[telegramId] = {};
   }
 
   const session = userSession[telegramId];
 
-  // If service type is selected
   if (Object.values(ServiceType).includes(data as ServiceType)) {
     session.serviceType = data as ServiceType;
     session.awaitingDate = true;
     await ctx.answerCbQuery();
 
-    // Ask for month and day only
     return ctx.reply(
       "🗓 Iltimos, buyurtma uchun sanani kiriting (Format: MM-DD, masalan: 04-26)"
     );
-  }
-  // If time is selected (match a time format like "09:00")
-  else if (
+  } else if (
     session.serviceType &&
     session.serviceDate &&
     /^\d{1,2}:\d{2}$/.test(data)
@@ -309,15 +459,15 @@ bot.on("callback_query", async (ctx) => {
       "📋 Xizmat turini tanlang: ",
       Markup.inlineKeyboard(serviceButtons)
     );
-  }
-  // Handle other callback types if needed
-  else {
+  } else {
     await ctx.answerCbQuery("Noma'lum so'rov");
-    return ctx.reply("❌ Xatolik yuz berdi. Iltimos /buyurtma ni qayta bosing.");
+    return ctx.reply(
+      "❌ Xatolik yuz berdi. Iltimos asosiy menyudan tanlang.",
+      mainMenuKeyboard
+    );
   }
 });
 
-// Helper function to create an order
 async function createOrder(ctx: Context, telegramId: number) {
   const session = userSession[telegramId];
   if (
@@ -327,7 +477,7 @@ async function createOrder(ctx: Context, telegramId: number) {
     !session.serviceTime
   ) {
     return ctx.reply(
-      "❌ Yetarli ma'lumot yo'q. Iltimos /buyurtma ni qayta bosing."
+      "❌ Yetarli ma'lumot yo'q. Iltimos asosiy menyudan tanlang"
     );
   }
 
@@ -336,12 +486,25 @@ async function createOrder(ctx: Context, telegramId: number) {
     return ctx.reply("❌ Foydalanuvchi topilmadi, iltimos ro'yhatdan o'ting.");
   }
 
+  const existingOrder = await Order.findOne({
+    serviceDate: session.serviceDate,
+    serviceTime: session.serviceTime,
+    status: { $ne: StatusType.Cancelled },
+  });
+
+  if (existingOrder) {
+    return ctx.reply(
+      "❌ Afsuski, bu vaqt band qilingan. Iltimos boshqa vaqt tanlang."
+    );
+  }
+
   const order = new Order({
     userId: user._id,
     serviceType: session.serviceType,
     serviceDate: session.serviceDate,
     serviceTime: session.serviceTime,
-    status: "pending",
+    orderCode: await createUniqueOrderCode(),
+    status: StatusType.Pending,
     createdAt: new Date(),
     updatedAt: new Date(),
   });
@@ -354,18 +517,31 @@ async function createOrder(ctx: Context, telegramId: number) {
   delete userSession[telegramId];
 
   const message =
-    `✅ Buyurtma tasdiqlandi!\n\n` +
+    `✅ Buyurtma yaratildi!\n\n` +
+    `🆔 Buyurtma ID: ${order.orderCode}\n\n` +
     `👤 Mijoz: ${user.fullName}\n` +
     `📱 Telefon: ${user.phoneNumber}\n` +
     `${user.telegramUsername ? `@${user.telegramUsername}\n` : ""}` +
     `\n` +
     `🛎 Xizmat: ${order.serviceType}\n` +
     `🗓 Sana: ${order.serviceDate}\n` +
-    `⏰ Vaqt: ${order.serviceTime}\n\n` +
-    `Rahmat! 🙌`;
+    `⏰ Vaqt: ${order.serviceTime}\n\n`;
+  const barberMesage = `Buyurtmani holatini tanlang.`;
+  const userMessage = `Buyurtma barberga yuborildi, tasdiqlanishini kuting.`;
 
-  bot.telegram.sendMessage(process.env.FORWARDING_CHANNEL_ID!, message);
-  return ctx.reply(message);
+  await bot.telegram.sendMessage(
+    process.env.FORWARDING_CHANNEL_ID!,
+    message + barberMesage,
+    Markup.inlineKeyboard([
+      [
+        Markup.button.callback("✅ Tasdiqlash", `confirm:${order._id}`),
+        Markup.button.callback("❌ Bekor qilish", `cancel:${order._id}`),
+      ],
+      [Markup.button.callback("✔️ Tugatildi", `complete:${order._id}`)],
+    ])
+  );
+
+  return ctx.reply(message + userMessage, mainMenuKeyboard);
 }
 
 bot.launch();
