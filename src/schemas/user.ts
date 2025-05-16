@@ -5,8 +5,9 @@ export interface IUser extends Document {
   fullName: string;
   telegramUsername?: string;
   phoneNumber: string;
-  numberOfBookings: number;
   isRegistered: boolean;
+  points: number;
+  hasDiscount: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -17,8 +18,9 @@ const userSchema = new Schema<IUser>(
     fullName: { type: String, required: true },
     telegramUsername: { type: String },
     phoneNumber: { type: String, required: true },
-    numberOfBookings: { type: Number, default: 0 },
     isRegistered: { type: Boolean, default: false },
+    points: { type: Number, default: 0 },
+    hasDiscount: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

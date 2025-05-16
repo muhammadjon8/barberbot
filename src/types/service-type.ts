@@ -23,7 +23,7 @@ export const ServicePrices: Record<ServiceType, number> = {
   [ServiceType.HairColoring]: 35000,
   [ServiceType.BeardColoring]: 35000,
   [ServiceType.FaceMask]: 25000,
-  [ServiceType.HairCurling]: 30000,
+  [ServiceType.HairCurling]: 300000,
   [ServiceType.HairBalding]: 20000,
   [ServiceType.HairStylingforBridgeGroom]: 300000,
 };

@@ -10,6 +10,10 @@ export interface IOrder extends Document {
   status: StatusType;
   cancellationReason?: string;
   orderCode: number;
+  rating: number;
+  price: number;
+  channelMessageId?: number;
+  feedback: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -36,6 +40,10 @@ const orderSchema = new Schema<IOrder>(
       required: true,
       unique: true,
     },
+    price: { type: Number },
+    rating: { type: Number },
+    feedback: { type: String },
+    channelMessageId: { type: Number },
   },
   { timestamps: true }
 );

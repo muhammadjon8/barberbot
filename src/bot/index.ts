@@ -1,27 +1,21 @@
 import { Telegraf, Context, Markup } from "telegraf";
 import dotenv from "dotenv";
-import { User } from "../schemas/user";
+import { IUser, User } from "../schemas/user";
 import { ServicePrices, ServiceType } from "../types/service-type";
 import { Order } from "../schemas/order";
 import { StatusType } from "../types/order-status-stype";
 import { createUniqueOrderCode } from "../utils/generate-order-code";
 import { mainMenuKeyboard } from "../constants/main-menu-keyboards";
+import { GamificationService } from "../services/gamification.service";
+import { UserSession } from "../types/user-session.type";
+import { TempData } from "../types/temp-data.type";
 
 dotenv.config();
 
 const bot = new Telegraf<Context>(process.env.BOT_TOKEN!);
 
-const tempData: Record<number, { fullName?: string }> = {};
-const userSession: Record<
-  number,
-  {
-    serviceType?: ServiceType;
-    serviceDate?: string;
-    serviceTime?: string;
-    awaitingDate?: boolean;
-    awaitingTime?: boolean;
-  }
-> = {};
+const tempData: TempData = {};
+const userSession: UserSession = {};
 
 bot.hears("📝 Buyurtma berish", async (ctx) => {
   ctx.reply("📅 Bron qilish uchun quyidagi tugmani bosing:");
@@ -50,6 +44,57 @@ bot.hears("📝 Buyurtma berish", async (ctx) => {
     Markup.inlineKeyboard(serviceButtons)
   );
 });
+bot.hears("🎫Chegirma shartlari", (ctx) => {
+  ctx.reply(
+    "Chegirma shartlari: Har bir muvaffaqiyatli tugatilgan xizmatdan so'ng sizga 1 ball taqdim etiladi. Qachonki ballaringiz soni 5 taga yetsa, siz 50% chegirmaga ega bo'lasiz.\n\nEslatma: Chegirma avtomatik ravishda keyingi buyurma uchun qo'llaniladi."
+  );
+});
+
+bot.hears("📍 Manzil", async (ctx) => {
+  const barberInfo = {
+    name: "Mardon Abduahatov",
+    phone: "+998906050021",
+    telegramUsername: "bar1ber_1",
+    locationName: "Juma shahri, Prokuratura ro'parasi.",
+    workingDays: "Dushanbadan Shanbagacha",
+    workingHours: "9:00 – 21:00",
+    latitude: 39.7109258,
+    longitude: 66.6643635,
+  };
+
+  const message = `
+💈 <b>${barberInfo.name}</b> – bu yerda har bir soch turmagi san'at asariga aylanadi.
+
+📞 <b>Telefon:</b> <a href="tel:${barberInfo.phone}">${barberInfo.phone}</a>
+👤 <b>Telegram:</b> <a href="https://t.me/${barberInfo.telegramUsername}">@${barberInfo.telegramUsername}</a>
+
+📍 <b>Manzil:</b>
+${barberInfo.locationName}
+
+🗓 <b>Ish kunlari:</b> ${barberInfo.workingDays}
+🕙 <b>Ish vaqti:</b> ${barberInfo.workingHours}
+
+Yangi imidj – yangi kayfiyat. Boshqacha boʻlishni xohlaysizmi? Hoziroq yoziling!
+  `.trim();
+
+  await ctx.replyWithHTML(message);
+
+  await ctx.replyWithLocation(barberInfo.latitude, barberInfo.longitude);
+});
+
+bot.hears("📊 Ballarim", async (ctx) => {
+  const telegramId = ctx.from?.id;
+  if (!telegramId) return;
+
+  const user = await User.findOne({ telegramId });
+  if (!user)
+    return ctx.reply(
+      "❌ Siz ro'yhatdan o'tmagansiz. Iltimos /start ni bosing."
+    );
+
+  const typedUser = user as IUser;
+  ctx.reply(await GamificationService.getPointsStatus(typedUser._id as string));
+});
 
 bot.hears("📋 Aktiv buyurtmalarim", async (ctx) => {
   const user = await User.findOne({ telegramId: ctx.from.id });
@@ -65,29 +110,6 @@ bot.hears("📋 Aktiv buyurtmalarim", async (ctx) => {
     return await ctx.reply("Sizda aktiv buyurtmalar yo‘q.");
 
   const messages = activeOrders.map(
-    (order) =>
-      `📌 *Buyurtma ID:* ${order.orderCode}\n` +
-      `📅 Sana: ${order.serviceDate}\n` +
-      `⏰ Vaqt: ${order.serviceTime}\n` +
-      `🧰 Xizmat: ${order.serviceType}\n` +
-      `📍 Holat: *${order.status}*`
-  );
-
-  await ctx.replyWithHTML(messages.join("\n\n"));
-});
-
-bot.hears("🗂 Barcha buyurtmalarim", async (ctx) => {
-  const user = await User.findOne({ telegramId: ctx.from.id });
-  if (!user) return ctx.reply("Foydalanuvchi topilmadi.");
-
-  await ctx.reply("Buyurtmalar yuklanmoqda...");
-  const allOrders = await Order.find({ userId: user._id }).sort({
-    createdAt: -1,
-  });
-
-  if (!allOrders.length) return ctx.reply("Buyurtmalar topilmadi.");
-
-  const messages = allOrders.map(
     (order) =>
       `📌 *Buyurtma ID:* ${order.orderCode}\n` +
       `📅 Sana: ${order.serviceDate}\n` +
@@ -117,10 +139,67 @@ bot.start(async (ctx) => {
 });
 
 bot.on("text", async (ctx) => {
-  const telegramId = ctx.from?.id;
+  const telegramId = ctx.from.id;
   const text = ctx.message.text;
+  const session = userSession[telegramId];
+
   if (!telegramId) return;
 
+  if (session?.awaitingFeedbackFor) {
+    const orderId = session.awaitingFeedbackFor;
+    const order = await Order.findById(orderId);
+    if (!order) {
+      delete userSession[telegramId];
+      return ctx.reply("❌ Buyurtma topilmadi.");
+    }
+    order.feedback = ctx.message.text;
+    await order.save();
+    const user = await User.findOne({ telegramId });
+
+    if (!user) {
+      delete userSession[telegramId];
+      return ctx.reply("❌ Foydalanuvchi topilmadi.");
+    }
+    const message =
+      `✅ Buyurtma yaratildi!\n\n` +
+      `🆔 Buyurtma ID: ${order.orderCode}\n\n` +
+      `👤 Mijoz: ${user.fullName}\n` +
+      `📱 Telefon: ${user.phoneNumber}\n` +
+      `${user.telegramUsername ? `@${user.telegramUsername}\n` : ""}` +
+      `\n` +
+      `🛎 Xizmat: ${order.serviceType}\n` +
+      `🗓 Sana: ${order.serviceDate}\n` +
+      `⏰ Vaqt: ${order.serviceTime}\n` +
+      `💵 Narx: ${order.price} so'm\n\n`;
+    await bot.telegram.editMessageText(
+      process.env.FORWARDING_CHANNEL_ID!,
+      order.channelMessageId,
+      undefined,
+      message +
+        `\n✅ Buyurtma yakunlandi va mijoz baholadi:\n\n⭐️ Baho: ${order.rating}/10\n💬 Fikr: ${order.feedback}`
+    );
+
+    if (user) {
+      user.points = (user.points || 0) + 1;
+
+      if (user.points >= 5) {
+        await ctx.reply(
+          "🎉 Tabriklaymiz! Siz 5 ta ball to'pladingiz va 50% chegirmaga ega bo'ldingiz! Keyingi buyurtmangizda avtomatik qo'llaniladi."
+        );
+      } else {
+        await ctx.reply(
+          `✅ Fikringiz uchun rahmat! Sizda hozircha ${user.points} ball mavjud.`
+        );
+      }
+
+      await user.save();
+    }
+
+    delete userSession[telegramId];
+    return;
+  }
+
+  // Handle user registration
   if (tempData[telegramId] && !tempData[telegramId].fullName) {
     tempData[telegramId].fullName = text;
 
@@ -134,7 +213,8 @@ bot.on("text", async (ctx) => {
     );
   }
 
-  if (userSession[telegramId] && userSession[telegramId].awaitingDate) {
+  // Handle date input
+  if (session && session.awaitingDate) {
     const dateFormatRegex = /^(0?[1-9]|1[0-2])-(0?[1-9]|[12][0-9]|3[01])$/;
     if (!dateFormatRegex.test(text)) {
       return ctx.reply(
@@ -234,7 +314,8 @@ bot.on("text", async (ctx) => {
     );
   }
 
-  if (userSession[telegramId] && userSession[telegramId].awaitingTime) {
+  // Handle manual time input
+  if (session && session.awaitingTime) {
     const timeFormatRegex = /^\d{1,2}:\d{2}$/;
     if (!timeFormatRegex.test(text)) {
       return ctx.reply(
@@ -329,7 +410,7 @@ bot.on("callback_query", async (ctx) => {
 
     switch (action) {
       case "confirm":
-        await ctx.answerCbQuery("⏳ Iltimos, kuting...");
+        await ctx.answerCbQuery("⏳ Ishongchingiz komilmi?");
         order.status = StatusType.Confirmed;
         await ctx.editMessageReplyMarkup(
           Markup.inlineKeyboard([
@@ -359,7 +440,7 @@ bot.on("callback_query", async (ctx) => {
         break;
 
       case "complete":
-        await ctx.answerCbQuery("⏳ Iltimos, kuting...");
+        await ctx.answerCbQuery("⏳ Ishonchingiz komilmi?");
         await ctx.editMessageReplyMarkup(
           Markup.inlineKeyboard([
             [
@@ -378,20 +459,38 @@ bot.on("callback_query", async (ctx) => {
 
       case "complete_yes":
         order.status = StatusType.Completed;
-        await ctx.answerCbQuery("⏳ Iltimos, kuting...");
         await order.save();
 
         await bot.telegram.sendMessage(
           user.telegramId,
-          `✅ Xizmat barber tomonidan yakunlandi.\nBuyurtma raqami: ${order.orderCode}\n\n\n*Biz bilan ishlaganingizdan mamnunmiz!* 😊`,
+          `✅ Xizmat barber tomonidan yakunlandi.\nBuyurtma raqami: ${order.orderCode}\n\n*Biz bilan ishlaganingizdan mamnunmiz!* 😊\n\nEndi bizning xizmatimizga ball va izoh qoldirsangiz chegirmaga ega bo'lishingiz mumkin!`,
           { parse_mode: "Markdown" }
         );
 
+        const ratingButtons = Array.from({ length: 10 }, (_, i) =>
+          Markup.button.callback(`${i + 1}`, `rate_${order._id}_${i + 1}`)
+        );
+
+        const ratingKeyboard = Markup.inlineKeyboard([
+          ratingButtons.slice(0, 5),
+          ratingButtons.slice(5),
+        ]);
+
+        const sentRatingMessage = await bot.telegram.sendMessage(
+          user.telegramId,
+          "📊 Iltimos, ushbu xizmatga nechchi ball berasiz? (1–10)",
+          ratingKeyboard
+        );
+        userSession[user.telegramId] = {
+          ...userSession[user.telegramId],
+          awaitingRatingFor: order._id as string,
+          ratingMessageId: sentRatingMessage.message_id,
+        };
         await ctx.editMessageReplyMarkup(undefined);
-        return ctx.answerCbQuery("Yakunlandi.");
+        return;
 
       case "complete_cancel":
-        await ctx.answerCbQuery("⏳ Iltimos, kuting...");
+        await ctx.answerCbQuery("⏳ Qaytarildi");
         await ctx.editMessageReplyMarkup(
           Markup.inlineKeyboard([
             [
@@ -412,6 +511,46 @@ bot.on("callback_query", async (ctx) => {
     await ctx.answerCbQuery("✅ Holat yangilandi");
     return;
   }
+  if (action.startsWith("rate")) {
+    const [, orderId, ratingStr] = action.split("_");
+    const rating = parseInt(ratingStr);
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return ctx.answerCbQuery("❌ Buyurtma topilmadi");
+    }
+
+    if (order.rating) {
+      return ctx.answerCbQuery("❗ Siz allaqachon baholagansiz.");
+    }
+
+    order.rating = rating;
+    await order.save();
+
+    const session = userSession[ctx.from.id];
+    if (session?.ratingMessageId) {
+      await bot.telegram.editMessageReplyMarkup(
+        ctx.from.id,
+        session.ratingMessageId,
+        undefined,
+        undefined
+      );
+    }
+
+    await ctx.answerCbQuery("✅ Baholadingiz, rahmat!");
+
+    await ctx.reply(
+      "✍️ Iltimos, ushbu xizmat haqida fikringizni yozib qoldiring:"
+    );
+
+    userSession[ctx.from.id] = {
+      ...userSession[ctx.from.id],
+      awaitingFeedbackFor: orderId,
+      ratingMessageId: undefined,
+    };
+
+    return;
+  }
 
   const telegramId = ctx.from?.id;
   if (!telegramId || !data) return;
@@ -428,7 +567,7 @@ bot.on("callback_query", async (ctx) => {
     await ctx.answerCbQuery();
 
     return ctx.reply(
-      "🗓 Iltimos, buyurtma uchun sanani kiriting (Format: MM-DD, masalan: 04-26)"
+      `Siz ${data} xizmatini tanladingiz.\n\n🗓 Iltimos, buyurtma uchun sanani kiriting (Format: OY-KUN, masalan: 04-26)`
     );
   } else if (
     session.serviceType &&
@@ -441,24 +580,6 @@ bot.on("callback_query", async (ctx) => {
 
     // Create the order
     return await createOrder(ctx, telegramId);
-  } else if (data === "restart") {
-    delete userSession[telegramId];
-    await ctx.answerCbQuery();
-
-    // Restart the booking process
-    const serviceButtons = Object.values(ServiceType).map((service) => {
-      return [
-        Markup.button.callback(
-          `${service} - ${ServicePrices[service]} so'm`,
-          service
-        ),
-      ];
-    });
-
-    return ctx.reply(
-      "📋 Xizmat turini tanlang: ",
-      Markup.inlineKeyboard(serviceButtons)
-    );
   } else {
     await ctx.answerCbQuery("Noma'lum so'rov");
     return ctx.reply(
@@ -485,6 +606,8 @@ async function createOrder(ctx: Context, telegramId: number) {
   if (!user) {
     return ctx.reply("❌ Foydalanuvchi topilmadi, iltimos ro'yhatdan o'ting.");
   }
+  const typedUser = user as IUser & { _id: any };
+  const userId = typedUser._id.toString();
 
   const existingOrder = await Order.findOne({
     serviceDate: session.serviceDate,
@@ -499,21 +622,28 @@ async function createOrder(ctx: Context, telegramId: number) {
   }
 
   const order = new Order({
-    userId: user._id,
+    userId,
     serviceType: session.serviceType,
     serviceDate: session.serviceDate,
     serviceTime: session.serviceTime,
     orderCode: await createUniqueOrderCode(),
     status: StatusType.Pending,
+    price: ServicePrices[session.serviceType],
     createdAt: new Date(),
     updatedAt: new Date(),
   });
+  const { finalPrice, discountUsed } = await GamificationService.applyDiscount(
+    userId,
+    ServicePrices[order.serviceType]
+  );
+  order.price = finalPrice;
+
+  let discountMessage = "";
+  if (discountUsed) {
+    discountMessage = "\n\n🎁 50% chegirma qo‘llandi\n";
+  }
 
   await order.save();
-
-  user.numberOfBookings += 1;
-  await user.save();
-
   delete userSession[telegramId];
 
   const message =
@@ -525,13 +655,14 @@ async function createOrder(ctx: Context, telegramId: number) {
     `\n` +
     `🛎 Xizmat: ${order.serviceType}\n` +
     `🗓 Sana: ${order.serviceDate}\n` +
-    `⏰ Vaqt: ${order.serviceTime}\n\n`;
-  const barberMesage = `Buyurtmani holatini tanlang.`;
+    `⏰ Vaqt: ${order.serviceTime}\n` +
+    `💵 Narx: ${finalPrice} so'm\n\n`;
+
   const userMessage = `Buyurtma barberga yuborildi, tasdiqlanishini kuting.`;
 
-  await bot.telegram.sendMessage(
+  const sentMessage = await bot.telegram.sendMessage(
     process.env.FORWARDING_CHANNEL_ID!,
-    message + barberMesage,
+    message + discountMessage,
     Markup.inlineKeyboard([
       [
         Markup.button.callback("✅ Tasdiqlash", `confirm:${order._id}`),
@@ -540,12 +671,14 @@ async function createOrder(ctx: Context, telegramId: number) {
       [Markup.button.callback("✔️ Tugatildi", `complete:${order._id}`)],
     ])
   );
+  const channelMessageId = sentMessage.message_id;
+  order.channelMessageId = channelMessageId;
+  await order.save();
 
-  return ctx.reply(message + userMessage, mainMenuKeyboard);
+  return ctx.reply(message + userMessage + discountMessage, mainMenuKeyboard);
 }
 
 bot.launch();
 
-// Enable graceful stop
 process.once("SIGINT", () => bot.stop("SIGINT"));
 process.once("SIGTERM", () => bot.stop("SIGTERM"));
