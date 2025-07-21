@@ -1,6 +1,7 @@
 export enum ServiceType {
   HaircutforElder = "Soch olish kattalar uchun",
-  HaircutforChildren = "Soch olish bolalar uchun",
+  HaircutforYoung = "Soch olish bolalar uchun (1-3 yosh)",
+  HaircutforChildren = "Soch olish bolalar uchun (3-10 yosh)",
   HairStraightening = "Kantovka to'g'rilash",
   BeardTrim = "Soqol olish",
   HairWash = "Bosh yuvish",
@@ -14,16 +15,17 @@ export enum ServiceType {
 }
 
 export const ServicePrices: Record<ServiceType, number> = {
-  [ServiceType.HaircutforElder]: 40000,
-  [ServiceType.HaircutforChildren]: 30000,
-  [ServiceType.HairStraightening]: 25000,
-  [ServiceType.BeardTrim]: 25000,
-  [ServiceType.HairWash]: 25000,
-  [ServiceType.Combo]: 80000,
-  [ServiceType.HairColoring]: 35000,
-  [ServiceType.BeardColoring]: 35000,
-  [ServiceType.FaceMask]: 25000,
+  [ServiceType.HaircutforElder]: 50000,
+  [ServiceType.HaircutforChildren]: 40000,
+  [ServiceType.HaircutforYoung]: 25000,
+  [ServiceType.HairStraightening]: 30000,
+  [ServiceType.BeardTrim]: 30000,
+  [ServiceType.HairWash]: 30000,
+  [ServiceType.Combo]: 100000,
+  [ServiceType.HairColoring]: 40000,
+  [ServiceType.BeardColoring]: 40000,
+  [ServiceType.FaceMask]: 30000,
   [ServiceType.HairCurling]: 300000,
-  [ServiceType.HairBalding]: 20000,
-  [ServiceType.HairStylingforBridgeGroom]: 300000,
+  [ServiceType.HairBalding]: 25000,
+  [ServiceType.HairStylingforBridgeGroom]: 400000,
 };
